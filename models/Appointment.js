@@ -1,205 +1,191 @@
-const db = require('../config/database');
+const pool = require('../config/database');
 
 class Appointment {
   // Crear cita
-  static create(userId, data) {
-    return new Promise((resolve, reject) => {
-      db.run(
+  static async create(userId, data) {
+    try {
+      const result = await pool.query(
         `INSERT INTO appointments (user_id, date, time, service_type, image_url, notes, status) 
-         VALUES (?, ?, ?, ?, ?, ?, 'pendiente')`,
-        [userId, data.date, data.time, data.serviceType, data.imageUrl || null, data.notes || null],
-        function(err) {
-          if (err) reject(err);
-          resolve({ id: this.lastID, userId, ...data, status: 'pendiente' });
-        }
+         VALUES ($1, $2, $3, $4, $5, $6, 'pendiente') RETURNING *`,
+        [userId, data.date, data.time, data.serviceType, data.imageUrl || null, data.notes || null]
       );
-    });
+      return result.rows[0];
+    } catch (err) {
+      console.error('Error creating appointment:', err);
+      throw err;
+    }
   }
 
   // Obtener citas de un usuario
-  static getByUserId(userId) {
-    return new Promise((resolve, reject) => {
-      db.all(
+  static async getByUserId(userId) {
+    try {
+      const result = await pool.query(
         `SELECT a.*, u.name as user_name, u.email as user_email 
          FROM appointments a 
          JOIN users u ON a.user_id = u.id 
-         WHERE a.user_id = ? 
+         WHERE a.user_id = $1 
          ORDER BY a.date DESC, a.time DESC`,
-        [userId],
-        (err, rows) => {
-          if (err) reject(err);
-          resolve(rows);
-        }
+        [userId]
       );
-    });
+      return result.rows;
+    } catch (err) {
+      console.error('Error getting appointments by user:', err);
+      throw err;
+    }
   }
 
   // Obtener cita por ID
-  static getById(id) {
-    return new Promise((resolve, reject) => {
-      db.get(
+  static async getById(id) {
+    try {
+      const result = await pool.query(
         `SELECT a.*, u.name as user_name, u.email as user_email 
          FROM appointments a 
          JOIN users u ON a.user_id = u.id 
-         WHERE a.id = ?`,
-        [id],
-        (err, row) => {
-          if (err) reject(err);
-          resolve(row);
-        }
+         WHERE a.id = $1`,
+        [id]
       );
-    });
+      return result.rows[0];
+    } catch (err) {
+      console.error('Error getting appointment by id:', err);
+      throw err;
+    }
   }
 
   // Obtener todas las citas (admin)
-  static getAll() {
-    return new Promise((resolve, reject) => {
-      db.all(
+  static async getAll() {
+    try {
+      const result = await pool.query(
         `SELECT a.*, u.name as user_name, u.email as user_email 
          FROM appointments a 
          JOIN users u ON a.user_id = u.id 
-         ORDER BY a.date DESC, a.time DESC`,
-        (err, rows) => {
-          if (err) reject(err);
-          resolve(rows);
-        }
+         ORDER BY a.date DESC, a.time DESC`
       );
-    });
+      return result.rows;
+    } catch (err) {
+      console.error('Error getting all appointments:', err);
+      throw err;
+    }
   }
 
   // Verificar disponibilidad de horario
-  static checkAvailability(date, time) {
-    return new Promise((resolve, reject) => {
-      db.get(
-        'SELECT id FROM appointments WHERE date = ? AND time = ? AND status != "cancelada"',
-        [date, time],
-        (err, row) => {
-          if (err) reject(err);
-          resolve(!row); // true si está disponible
-        }
+  static async checkAvailability(date, time) {
+    try {
+      const result = await pool.query(
+        'SELECT id FROM appointments WHERE date = $1 AND time = $2 AND status != $3',
+        [date, time, 'cancelada']
       );
-    });
+      return result.rows.length === 0; // true si está disponible
+    } catch (err) {
+      console.error('Error checking availability:', err);
+      throw err;
+    }
   }
 
   // Actualizar estado de cita
-  static updateStatus(id, status) {
-    return new Promise((resolve, reject) => {
-      db.run(
-        'UPDATE appointments SET status = ? WHERE id = ?',
-        [status, id],
-        function(err) {
-          if (err) reject(err);
-          resolve({ id, status });
-        }
+  static async updateStatus(id, status) {
+    try {
+      const result = await pool.query(
+        'UPDATE appointments SET status = $1 WHERE id = $2 RETURNING *',
+        [status, id]
       );
-    });
+      return result.rows[0];
+    } catch (err) {
+      console.error('Error updating appointment status:', err);
+      throw err;
+    }
   }
 
   // Actualizar notas del empleado/admin
-  static updateAdminNotes(id, adminNotes) {
-    return new Promise((resolve, reject) => {
-      db.run(
-        'UPDATE appointments SET admin_notes = ? WHERE id = ?',
-        [adminNotes, id],
-        function(err) {
-          if (err) reject(err);
-          resolve({ id, admin_notes: adminNotes });
-        }
+  static async updateAdminNotes(id, adminNotes) {
+    try {
+      const result = await pool.query(
+        'UPDATE appointments SET admin_notes = $1 WHERE id = $2 RETURNING *',
+        [adminNotes, id]
       );
-    });
+      return result.rows[0];
+    } catch (err) {
+      console.error('Error updating admin notes:', err);
+      throw err;
+    }
   }
 
   // Cancelar cita
-  static cancel(id, userId) {
-    return new Promise((resolve, reject) => {
-      db.run(
-        'UPDATE appointments SET status = "cancelada" WHERE id = ? AND user_id = ?',
-        [id, userId],
-        function(err) {
-          if (err) reject(err);
-          resolve({ id, status: 'cancelada' });
-        }
+  static async cancel(id, userId) {
+    try {
+      const result = await pool.query(
+        'UPDATE appointments SET status = $1 WHERE id = $2 AND user_id = $3 RETURNING *',
+        ['cancelada', id, userId]
       );
-    });
+      return result.rows[0];
+    } catch (err) {
+      console.error('Error cancelling appointment:', err);
+      throw err;
+    }
   }
 
   // Obtener estadísticas para dashboard admin
-  static getStats() {
-    return new Promise((resolve, reject) => {
+  static async getStats() {
+    try {
       const stats = {};
-      
-      db.get('SELECT COUNT(*) as total FROM appointments', [], (err, row) => {
-        if (err) reject(err);
-        stats.total = row.total;
-        
-        db.get('SELECT COUNT(*) as total FROM appointments WHERE status = "pendiente"', [], (err, row) => {
-          if (err) reject(err);
-          stats.pending = row.total;
-          
-          db.get('SELECT COUNT(*) as total FROM appointments WHERE status = "confirmada"', [], (err, row) => {
-            if (err) reject(err);
-            stats.confirmed = row.total;
-            
-            db.get('SELECT COUNT(*) as total FROM appointments WHERE status = "completada"', [], (err, row) => {
-              if (err) reject(err);
-              stats.completed = row.total;
-              
-              db.get('SELECT COUNT(*) as total FROM appointments WHERE status = "cancelada"', [], (err, row) => {
-                if (err) reject(err);
-                stats.cancelled = row.total;
-                
-                // Citas por servicio
-                db.all(
-                  'SELECT service_type, COUNT(*) as count FROM appointments GROUP BY service_type',
-                  [],
-                  (err, rows) => {
-                    if (err) reject(err);
-                    stats.byService = rows;
-                    
-                    // Citas por día (últimos 7 días)
-                    db.all(
-                      `SELECT date, COUNT(*) as count FROM appointments 
-                       WHERE date >= date('now', '-7 days') 
-                       GROUP BY date ORDER BY date`,
-                      [],
-                      (err, rows) => {
-                        if (err) reject(err);
-                        stats.byDay = rows;
-                        
-                        // Citas de hoy
-                        db.get(
-                          `SELECT COUNT(*) as total FROM appointments WHERE date = date('now')`,
-                          [],
-                          (err, row) => {
-                            if (err) reject(err);
-                            stats.today = row.total;
-                            resolve(stats);
-                          }
-                        );
-                      }
-                    );
-                  }
-                );
-              });
-            });
-          });
-        });
-      });
-    });
+
+      // Total de citas
+      let result = await pool.query('SELECT COUNT(*) as total FROM appointments');
+      stats.total = parseInt(result.rows[0].total);
+
+      // Citas pendientes
+      result = await pool.query('SELECT COUNT(*) as total FROM appointments WHERE status = $1', ['pendiente']);
+      stats.pending = parseInt(result.rows[0].total);
+
+      // Citas confirmadas
+      result = await pool.query('SELECT COUNT(*) as total FROM appointments WHERE status = $1', ['confirmada']);
+      stats.confirmed = parseInt(result.rows[0].total);
+
+      // Citas completadas
+      result = await pool.query('SELECT COUNT(*) as total FROM appointments WHERE status = $1', ['completada']);
+      stats.completed = parseInt(result.rows[0].total);
+
+      // Citas canceladas
+      result = await pool.query('SELECT COUNT(*) as total FROM appointments WHERE status = $1', ['cancelada']);
+      stats.cancelled = parseInt(result.rows[0].total);
+
+      // Citas por servicio
+      result = await pool.query('SELECT service_type, COUNT(*) as count FROM appointments GROUP BY service_type');
+      stats.byService = result.rows;
+
+      // Citas por día (últimos 7 días)
+      result = await pool.query(
+        `SELECT date, COUNT(*) as count FROM appointments 
+         WHERE date >= CURRENT_DATE - INTERVAL '7 days' 
+         GROUP BY date ORDER BY date`
+      );
+      stats.byDay = result.rows;
+
+      // Citas de hoy
+      result = await pool.query(
+        "SELECT COUNT(*) as total FROM appointments WHERE date = CURRENT_DATE"
+      );
+      stats.today = parseInt(result.rows[0].total);
+
+      // Usuarios únicos
+      result = await pool.query('SELECT COUNT(DISTINCT user_id) as total FROM appointments');
+      stats.uniqueUsers = parseInt(result.rows[0].total);
+
+      return stats;
+    } catch (err) {
+      console.error('Error getting stats:', err);
+      throw err;
+    }
   }
 
   // Contar usuarios que han reservado
-  static getUniqueUsers() {
-    return new Promise((resolve, reject) => {
-      db.get(
-        'SELECT COUNT(DISTINCT user_id) as total FROM appointments',
-        [],
-        (err, row) => {
-          if (err) reject(err);
-          resolve(row.total);
-        }
-      );
-    });
+  static async getUniqueUsers() {
+    try {
+      const result = await pool.query('SELECT COUNT(DISTINCT user_id) as total FROM appointments');
+      return parseInt(result.rows[0].total);
+    } catch (err) {
+      console.error('Error getting unique users:', err);
+      throw err;
+    }
   }
 }
 
